@@ -1,0 +1,219 @@
+// Campus Circle — data model
+// SQLite for local dev (zero config, matches Cailyx's own dev.db precedent).
+// Swap provider to postgresql + Supabase DATABASE_URL for the real deploy — see README.
+//
+// SQLite has no native enum support in Prisma, so every "enum" below is a plain String
+// with the allowed values documented in a comment and enforced in src/lib/*.ts. Swapping
+// to postgresql later can promote these back to real enums if wanted.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Cohort {
+  id            String         @id @default(cuid())
+  name          String
+  startsAt      DateTime
+  endsAt        DateTime
+  status        String         @default("active")
+  campuses      Campus[]
+  members       Membership[]
+  tasks         Task[]
+  announcements Announcement[]
+  createdAt     DateTime       @default(now())
+}
+
+model Campus {
+  id       String       @id @default(cuid())
+  name     String
+  city     String
+  country  String       @default("India")
+  cohortId String
+  cohort   Cohort       @relation(fields: [cohortId], references: [id])
+  members  Membership[]
+}
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  name              String
+  role              String   @default("ambassador") // ambassador | reviewer | admin
+  status            String   @default("active")
+  pageUrl           String?
+  lane              String?
+  bio               String?
+  avatarColor       String   @default("#9a7a4a")
+  showInDirectory   Boolean  @default(false)
+  showOnLeaderboard Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  membership     Membership?
+  submissions    Submission[]
+  reviews        Review[]
+  ledgerEntries  SignalLedger[]
+  rewardGrants   RewardGrant[]
+  certificate    Certificate?
+  moduleProgress ModuleProgress[]
+}
+
+model Membership {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id])
+  cohortId    String
+  cohort      Cohort   @relation(fields: [cohortId], references: [id])
+  campusId    String
+  campus      Campus   @relation(fields: [campusId], references: [id])
+  tier        String   @default("ambassador") // applicant | ambassador | senior | campus_lead | alumnus
+  signalTotal Int      @default(0)
+  joinedAt    DateTime @default(now())
+}
+
+model Task {
+  id             String   @id @default(cuid())
+  cohortId       String
+  cohort         Cohort   @relation(fields: [cohortId], references: [id])
+  track          String // A | B | C | D | E
+  code           String
+  week           Int
+  title          String
+  summary        String
+  briefMd        String
+  submissionType String // link | link_set | document | upload | structured | roster | quiz
+  typeConfig     String   @default("{}") // JSON
+  rubric         String   @default("[]") // JSON string[]
+  signalValue    Int
+  opensAt        DateTime
+  dueAt          DateTime
+  published      Boolean  @default(true)
+
+  submissions Submission[]
+
+  @@unique([cohortId, code])
+}
+
+model Submission {
+  id          String    @id @default(cuid())
+  taskId      String
+  task        Task      @relation(fields: [taskId], references: [id])
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  status      String    @default("draft") // draft | submitted | in_review | accepted | changes_requested | missed
+  attemptNo   Int       @default(1)
+  content     String    @default("{}") // JSON, shaped by task.submissionType
+  snapshotUrl String?
+  submittedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  reviews     Review[]
+  ledgerEntry SignalLedger?
+
+  @@unique([taskId, userId, attemptNo])
+}
+
+model Review {
+  id            String     @id @default(cuid())
+  submissionId  String
+  submission    Submission @relation(fields: [submissionId], references: [id])
+  reviewerId    String
+  reviewer      User       @relation(fields: [reviewerId], references: [id])
+  decision      String // accepted | changes_requested | rejected
+  rubricResults String     @default("[]") // JSON bool[]
+  feedbackMd    String?
+  reviewedAt    DateTime   @default(now())
+}
+
+model SignalLedger {
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id])
+  submissionId String?     @unique
+  submission   Submission? @relation(fields: [submissionId], references: [id])
+  taskCode     String
+  taskTitle    String
+  delta        Int
+  reason       String
+  createdAt    DateTime    @default(now())
+}
+
+model Reward {
+  id             String        @id @default(cuid())
+  code           String        @unique
+  name           String
+  description    String
+  tierGate       String // applicant | ambassador | senior | campus_lead | alumnus
+  signalGate     Int           @default(0)
+  fulfilmentType String // digital | shipped | scheduled | none
+  grants         RewardGrant[]
+}
+
+model RewardGrant {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  rewardId    String
+  reward      Reward    @relation(fields: [rewardId], references: [id])
+  status      String    @default("locked") // locked | earned | claimed | fulfilled
+  detail      String? // address, session slot, etc — free text for the demo
+  fulfilledAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, rewardId])
+}
+
+model Certificate {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id])
+  publicId        String    @unique
+  issuedAt        DateTime  @default(now())
+  assessmentScore Int
+  revokedAt       DateTime?
+}
+
+model LibraryModule {
+  id       String @id @default(cuid())
+  code     String @unique
+  title    String
+  summary  String
+  bodyMd   String
+  order    Int
+  progress ModuleProgress[]
+}
+
+model ModuleProgress {
+  id          String        @id @default(cuid())
+  userId      String
+  user        User          @relation(fields: [userId], references: [id])
+  moduleId    String
+  module      LibraryModule @relation(fields: [moduleId], references: [id])
+  completedAt DateTime?
+
+  @@unique([userId, moduleId])
+}
+
+model Application {
+  id         String   @id @default(cuid())
+  name       String
+  email      String
+  campus     String
+  city       String
+  field      String
+  answerText String
+  status     String   @default("pending") // pending | accepted | rejected
+  createdAt  DateTime @default(now())
+}
+
+model Announcement {
+  id          String   @id @default(cuid())
+  cohortId    String
+  cohort      Cohort   @relation(fields: [cohortId], references: [id])
+  bodyMd      String
+  publishedAt DateTime @default(now())
+}

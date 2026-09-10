@@ -1,0 +1,22 @@
+# dependencies / build
+node_modules
+.next
+out
+build
+dist
+*.log
+*.tsbuildinfo
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# local database (seeded student-shaped data)
+# note: DATABASE_URL resolves relative to the schema dir, so the file lands at prisma/prisma/dev.db
+*.db
+*.db-journal
+
+# misc
+.DS_Store
+_preview.html
