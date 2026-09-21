@@ -1,29 +1,11 @@
 import type { NextConfig } from "next";
 
-// Content Security Policy, production only.
+// The Content-Security-Policy is set in src/middleware.ts, not here.
 //
-// In development Next injects an eval'd HMR runtime and the dev overlay, so shipping a real
-// CSP there would break the tool you use to build the app. That also means a CSP verified only
-// in dev is worth nothing, so this policy is checked against `next start` by
-// `npm run verify:prod`, not against the dev server.
-//
-// style-src keeps 'unsafe-inline' deliberately: framer-motion writes an inline style attribute
-// on nearly every animated node and the brand hero paints its grid and glow with one. Removing
-// it would mean rewriting the motion layer to defend a vector (inline style authorship) that
-// the app's own components produce. script-src has no unsafe-inline and no unsafe-eval.
-const CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self'",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "upgrade-insecure-requests",
-].join("; ");
+// It needs a per-request nonce to allow the App Router's own inline bootstrap scripts, which
+// static config cannot produce. Nor may it live here *as well*: a response carrying two CSP
+// headers is enforced as their intersection, so a second nonce-less policy would undo the
+// nonce and blank the page again.
 
 const SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -45,7 +27,6 @@ const nextConfig: NextConfig = {
     const prod =
       process.env.NODE_ENV === "production"
         ? [
-            { key: "Content-Security-Policy", value: CSP },
             // Two hours. Long enough to matter, short enough that a mistake here does not
             // take the site down for a month.
             { key: "Strict-Transport-Security", value: "max-age=7200; includeSubDomains" },

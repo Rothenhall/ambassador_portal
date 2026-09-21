@@ -117,11 +117,21 @@ npm run verify:ui   # 48 browser checks against the running app: role guards, th
                     # person, adjust their Signal, change their tier, suspend them and fail
                     # to get back in, author and edit a task, add a reward and a campus,
                     # password sign-in on both faces, throttling, admin reset and rotation
+npm run verify:prod # 30 edge-surface checks: the CSP and its per-request nonce, the static
+                    # hardening headers, that every inline script Next emits carries that
+                    # nonce, and — in a real browser — that the page paints visible copy,
+                    # blocks nothing, navigates client-side and shows no dev sign-in picker
 ```
 
 `verify:ui` drives real writes, so reseed (`npm run db:reset` then `npm run db:seed`) before a
 clean pass. It needs a Chromium browser and playwright-core or playwright (set `CC_PLAYWRIGHT`
 if neither is installed in this project).
+
+`verify:prod` needs no database, but must run against `npm run build && npm run start` — or a
+deployed URL via `CC_URL=https://…` — never the dev server, which deliberately carries no CSP.
+It exists because a `script-src 'self'` with no nonce blocked the App Router's own inline
+bootstrap scripts and served a blank white page at HTTP 200: the policy read correctly in
+isolation, and only "can a visitor actually read this?" caught it.
 
 ## What's real vs. stubbed
 
