@@ -136,7 +136,7 @@ corpus; link snapshots that record what a reviewer would have seen.
 - **Deploy target.** The Supabase project this app was linked to (`campus-circle`,
   `hixnktighbucydjndovx`) has been deleted — its host no longer resolves and its pooler rejects
   the tenant. A new Postgres (or a new Supabase project) has to be provisioned and
-  `DATABASE_URL` / `DIRECT_URL` pointed at it before `circle.rothenhall.com` can serve real
+  `DATABASE_URL` / `DIRECT_URL` pointed at it before `campusscout.rothenhall.com` can serve real
   people. Rate limiting and magic-link state are per-process in memory or in the database, so a
   multi-instance deploy needs Redis for the limiter.
 - **Uploads** are stored as base64 inside the Postgres `Json` column: mime, extension, size

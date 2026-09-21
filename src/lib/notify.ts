@@ -112,7 +112,7 @@ export async function sendApplicationReceived(opts: { to: string; name: string }
       `Thanks, ${esc(first)}.`,
       `<p style="font-size:.95rem;line-height:1.6;margin:0">Your application is in the queue. A person reads each one — decisions come back inside a week.</p>`,
       "What happens next",
-      "https://circle.rothenhall.com/apply",
+      "https://campusscout.rothenhall.com/apply",
       "Keep an eye on this address: an accepted applicant gets their account here."
     ),
   });

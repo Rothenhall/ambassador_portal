@@ -83,7 +83,7 @@ export function LetterDocument({ data }: { data: LetterData }) {
         <Section num="02" title="Your First Assignment">
           <table className="w-full border-collapse overflow-hidden rounded-sm border border-line text-[12.5px]">
             <tbody>
-              <Row label="Console">circle.rothenhall.com &mdash; live now, using the sign-in link already in your inbox</Row>
+              <Row label="Console">campusscout.rothenhall.com &mdash; live now, using the sign-in link already in your inbox</Row>
               <Row label="Tier">{tierLabel(data.tier)}</Row>
               <Row label="Opens">{shortDate(assignmentOpens)}</Row>
               <Row label="First due">{shortDate(assignmentDue)}</Row>

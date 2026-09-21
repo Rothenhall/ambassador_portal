@@ -16,7 +16,7 @@ export type AccountResult =
   | { ok: false; error: string };
 
 function appUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || "https://circle.rothenhall.com";
+  return process.env.NEXT_PUBLIC_APP_URL || "https://campusscout.rothenhall.com";
 }
 
 export async function createAccount(opts: {

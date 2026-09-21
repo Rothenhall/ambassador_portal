@@ -72,7 +72,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
           </div>
         </div>
 
-        <p className="relative text-xs text-canvas/35">circle.rothenhall.com · invite only</p>
+        <p className="relative text-xs text-canvas/35">campusscout.rothenhall.com · invite only</p>
       </div>
 
       {/* Sign in */}

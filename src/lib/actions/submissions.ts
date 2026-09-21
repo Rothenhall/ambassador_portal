@@ -19,7 +19,7 @@ const MAX_ATTEMPTS = 3;
 const SNAPSHOT_BYTES = 300_000;
 const SNAPSHOT_TIMEOUT_MS = 4000;
 const SNAPSHOT_MAX_HOPS = 4;
-const SNAPSHOT_UA = "CampusCircleReviewer/1.0 (submission snapshot; https://circle.rothenhall.com)";
+const SNAPSHOT_UA = "CampusCircleReviewer/1.0 (submission snapshot; https://campusscout.rothenhall.com)";
 
 export type SubmissionOutcome = ActionResult<{ savedAt?: string }>;
 
