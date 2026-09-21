@@ -13,14 +13,12 @@ export function RewardsPanel({
   tier,
   signalTotal,
   certificate,
-  onVerify,
 }: {
   rewards: AmbassadorDashboardData["rewards"];
   grants: AmbassadorDashboardData["grants"];
   tier: string;
   signalTotal: number;
-  certificate: { publicId: string } | null;
-  onVerify: () => void;
+  certificate: { publicId: string; revoked: boolean } | null;
 }) {
   const grantByReward = new Map(grants.map((g) => [g.rewardId, g]));
 
@@ -30,8 +28,9 @@ export function RewardsPanel({
         const grant = grantByReward.get(r.id);
         const tierOk = tierAtLeast(tier, r.tierGate);
         const signalGap = Math.max(0, r.signalGate - signalTotal);
-        const eligible = tierOk && signalGap === 0;
-        const status = grant?.status ?? (eligible ? "earned" : "locked");
+        // `earned` is a row written by the server (syncEarnedGrants), not something the panel
+        // decides on the fly: this list explains the gate, it does not grant the reward.
+        const status = grant?.status ?? "locked";
         const active = status !== "locked";
 
         return (
@@ -66,9 +65,14 @@ export function RewardsPanel({
             <div className="shrink-0">
               {status === "earned" && <RewardClaim rewardId={r.id} fulfilmentType={r.fulfilmentType} />}
               {r.code === "certificate" && status === "fulfilled" && certificate && (
-                <button onClick={onVerify} className="link-line text-xs font-medium text-cognac-deep">
-                  Verify &rarr;
-                </button>
+                <a
+                  href={`/verify/${certificate.publicId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="link-line text-xs font-medium text-cognac-deep"
+                >
+                  {certificate.revoked ? "Verify (revoked)" : "Verify"} &rarr;
+                </a>
               )}
               {status === "claimed" && <span className="text-xs text-ink-45">Awaiting fulfilment</span>}
             </div>

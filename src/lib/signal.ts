@@ -8,7 +8,7 @@ export const BANDS = [
 ] as const;
 
 export function bandFor(signal: number) {
-  let current = BANDS[0];
+  let current: (typeof BANDS)[number] = BANDS[0];
   for (const b of BANDS) if (signal >= b.floor) current = b;
   return current.label;
 }

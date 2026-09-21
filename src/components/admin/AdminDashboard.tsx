@@ -13,6 +13,7 @@ import { AdminTasksPanel } from "@/components/admin/TasksPanel";
 import { ApplicationsPanel } from "@/components/admin/ApplicationsPanel";
 import { AdminRewardsPanel } from "@/components/admin/RewardsPanel";
 import { SettingsPanel } from "@/components/admin/SettingsPanel";
+import { TaskEditor } from "@/components/admin/TaskEditor";
 import type { AdminDashboardData } from "@/lib/admin-dashboard";
 
 export function AdminDashboard({
@@ -20,23 +21,25 @@ export function AdminDashboard({
   admin,
 }: {
   data: AdminDashboardData;
-  admin: { name: string; role: string; avatarColor: string };
+  admin: { id: string; name: string; email: string; role: string; avatarColor: string; hasPassword: boolean };
 }) {
   const [tab, setTab] = useState("overview");
   const [openAmbassadorId, setOpenAmbassadorId] = useState<string | null>(null);
+  const [openTaskId, setOpenTaskId] = useState<string | null | undefined>(undefined);
 
   const openAmbassador = useMemo(() => data.ambassadors.find((a) => a.id === openAmbassadorId) ?? null, [data.ambassadors, openAmbassadorId]);
+  const isAdmin = admin.role === "admin";
   const pendingApplications = data.applications.filter((a) => a.status === "pending").length;
   const pendingFulfilment = data.rewardGrants.filter((g) => g.status === "claimed").length;
 
   const tabs = [
     { key: "overview", label: "Overview", panel: <OverviewPanel data={data} onOpenReview={() => setTab("review")} /> },
-    { key: "review", label: "Review", badge: data.stats.pendingCount, panel: <ReviewQueueClient items={data.reviewQueue} /> },
-    { key: "ambassadors", label: "Ambassadors", panel: <AmbassadorsPanel ambassadors={data.ambassadors} onOpen={setOpenAmbassadorId} /> },
-    { key: "tasks", label: "Tasks", panel: <AdminTasksPanel tasks={data.tasks} /> },
-    { key: "applications", label: "Applications", badge: pendingApplications, panel: <ApplicationsPanel applications={data.applications} /> },
-    { key: "rewards", label: "Rewards", badge: pendingFulfilment, panel: <AdminRewardsPanel grants={data.rewardGrants} /> },
-    { key: "settings", label: "Settings", panel: <SettingsPanel data={data} /> },
+    { key: "review", label: "Review", badge: data.stats.pendingCount, panel: <ReviewQueueClient items={data.reviewQueue} me={{ id: admin.id, name: admin.name, role: admin.role }} /> },
+    { key: "ambassadors", label: "Ambassadors", panel: <AmbassadorsPanel ambassadors={data.ambassadors} onOpen={setOpenAmbassadorId} canManage={isAdmin} cohorts={data.cohorts} campuses={data.campuses} /> },
+    { key: "tasks", label: "Tasks", panel: <AdminTasksPanel tasks={data.tasks} canPublish={isAdmin} canEdit={isAdmin} onEdit={setOpenTaskId} /> },
+    { key: "applications", label: "Applications", badge: pendingApplications, panel: <ApplicationsPanel applications={data.applications} canDecide={isAdmin} /> },
+    { key: "rewards", label: "Rewards", badge: pendingFulfilment, panel: <AdminRewardsPanel grants={data.rewardGrants} canFulfil={isAdmin} /> },
+    { key: "settings", label: "Settings", panel: <SettingsPanel data={data} role={admin.role} meId={admin.id} meEmail={admin.email} hasPassword={admin.hasPassword} /> },
   ];
 
   return (
@@ -55,12 +58,29 @@ export function AdminDashboard({
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto">
-        <TabSwitcher tabs={tabs} active={tab} onChange={setTab} />
-      </div>
+      <main id="main" className="flex-1 overflow-y-auto">
+        <TabSwitcher tabs={tabs} active={tab} onChange={setTab} label="Operator sections" />
+      </main>
 
       <Drawer open={!!openAmbassador} onClose={() => setOpenAmbassadorId(null)} eyebrow="Ambassador" title={openAmbassador?.name}>
-        {openAmbassador && <AmbassadorDrawerContent ambassador={openAmbassador} />}
+        {openAmbassador && <AmbassadorDrawerContent ambassador={openAmbassador} canAdmin={isAdmin} me={{ id: admin.id, role: admin.role }} />}
+      </Drawer>
+
+      <Drawer
+        open={openTaskId !== undefined}
+        onClose={() => setOpenTaskId(undefined)}
+        eyebrow={openTaskId ? "Edit task" : "New brief"}
+        title={openTaskId ? data.tasks.find((t) => t.id === openTaskId)?.title ?? "Task" : "New task"}
+      >
+        {openTaskId !== undefined && (
+          <TaskEditor
+            task={openTaskId ? data.tasks.find((t) => t.id === openTaskId) ?? null : null}
+            cohorts={data.cohorts}
+            defaultCohortId={data.cohort.id}
+            onDone={() => setOpenTaskId(undefined)}
+            onCancel={() => setOpenTaskId(undefined)}
+          />
+        )}
       </Drawer>
     </div>
   );

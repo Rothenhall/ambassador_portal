@@ -1,18 +1,33 @@
 import { db } from "@/lib/db";
-import { signInAs } from "@/lib/actions/auth";
-import { Avatar } from "@/components/ui/Misc";
+import { devSignInEnabled } from "@/lib/auth";
 import { tierLabel } from "@/lib/signal";
 import { FullLockup, Wordmark } from "@/components/brand/Logo";
-import { SignInReveal, SignInRow } from "@/components/SignInReveal";
+import { SignInPanel, type DevAccount } from "@/components/SignInPanel";
 
-export default async function SignInPage() {
-  const users = await db.user.findMany({
-    orderBy: [{ role: "asc" }, { name: "asc" }],
-    include: { membership: { include: { campus: true } } },
-  });
+export const dynamic = "force-dynamic";
 
-  const admins = users.filter((u) => u.role === "admin" || u.role === "reviewer");
-  const ambassadors = users.filter((u) => u.role === "ambassador");
+export default async function SignInPage({ searchParams }: { searchParams: Promise<{ link?: string }> }) {
+  const { link } = await searchParams;
+
+  // The old page rendered every account in the roster as a one-click session, in every
+  // environment, for anyone who found the URL. The list is now built only when dev sign-in
+  // is actually enabled, and dev sign-in is refused server-side outside a local dev server.
+  let devAccounts: DevAccount[] = [];
+  if (devSignInEnabled()) {
+    const users = await db.user.findMany({
+      orderBy: [{ role: "asc" }, { name: "asc" }],
+      include: { membership: { include: { campus: true } } },
+    });
+    devAccounts = users.map((u) => ({
+      id: u.id,
+      name: u.name,
+      role: u.role,
+      tier: u.membership ? tierLabel(u.membership.tier) : null,
+      campus: u.membership?.campus.name ?? null,
+      signal: u.membership?.signalTotal ?? null,
+      avatarColor: u.avatarColor,
+    }));
+  }
 
   return (
     <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[1fr_27rem]">
@@ -30,7 +45,6 @@ export default async function SignInPage() {
           className="pointer-events-none absolute -right-32 -top-32 h-[30rem] w-[30rem] rounded-full opacity-40 blur-3xl"
           style={{ background: "radial-gradient(closest-side, rgba(154,122,74,0.28), transparent 70%)" }}
         />
-
         <Wordmark height={20} onDark className="relative" />
 
         <div className="relative flex max-w-lg flex-col gap-6">
@@ -62,58 +76,12 @@ export default async function SignInPage() {
       </div>
 
       {/* Sign in */}
-      <div className="ground relative flex flex-col justify-center gap-7 px-8 py-12 sm:px-12">
-        <div className="relative">
-          <div className="lg:hidden">
-            <FullLockup width={132} className="mb-6" />
-          </div>
-          <h2 className="font-display text-[1.75rem] font-bold tracking-tightest">Sign in</h2>
-          <p className="mt-1.5 text-sm text-ink-60">
-            Campus Circle accounts are issued by invitation. Choose your account to continue.
-          </p>
+      <main id="main" className="ground relative flex flex-col justify-center gap-7 px-8 py-12 sm:px-12">
+        <div className="lg:hidden">
+          <FullLockup width={132} className="mb-6" />
         </div>
-
-        <SignInReveal>
-          <div>
-            <p className="eyebrow mb-2.5">Operator</p>
-            <div className="flex flex-col gap-1.5">
-              {admins.map((u) => (
-                <form key={u.id} action={signInAs.bind(null, u.id)}>
-                  <SignInRow>
-                    <Avatar name={u.name} color={u.avatarColor} size={34} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-ink">{u.name}</span>
-                      <span className="block truncate text-xs capitalize text-ink-45">{u.role}</span>
-                    </span>
-                  </SignInRow>
-                </form>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className="eyebrow mb-2.5">Ambassadors</p>
-            <div className="flex max-h-[19rem] flex-col gap-1.5 overflow-y-auto pr-1">
-              {ambassadors.map((u) => (
-                <form key={u.id} action={signInAs.bind(null, u.id)}>
-                  <SignInRow>
-                    <Avatar name={u.name} color={u.avatarColor} size={34} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-ink">{u.name}</span>
-                      <span className="block truncate text-xs text-ink-45">
-                        {u.membership ? `${tierLabel(u.membership.tier)} · ${u.membership.campus.name}` : u.role}
-                      </span>
-                    </span>
-                    <span className="shrink-0 font-display text-sm font-semibold text-ink-45">
-                      {u.membership?.signalTotal ?? ""}
-                    </span>
-                  </SignInRow>
-                </form>
-              ))}
-            </div>
-          </div>
-        </SignInReveal>
-      </div>
+        <SignInPanel devAccounts={devAccounts} notice={link === "invalid" ? "invalid" : null} />
+      </main>
     </div>
   );
 }

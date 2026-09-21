@@ -2,7 +2,9 @@
 
 import { motion } from "framer-motion";
 import { SavedToast } from "@/components/motion/SavedToast";
-import { useState, useTransition } from "react";
+import { ActionNote } from "@/components/ActionNote";
+import { useActionRunner } from "@/components/use-action-runner";
+import { useState } from "react";
 import { saveDraft, submitTask } from "@/lib/actions/submissions";
 import { IconPlus, IconX } from "@/components/icons";
 
@@ -27,7 +29,7 @@ export function StructuredForm({
   const [rows, setRows] = useState<Row[]>(
     initial?.rows?.length ? initial.rows : Array.from({ length: Math.min(3, minRows) }, () => emptyRow(columns))
   );
-  const [pending, startTransition] = useTransition();
+  const { run, status, pending } = useActionRunner();
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const filledRows = rows.filter((r) => Object.values(r).some((v) => v?.trim())).length;
@@ -100,7 +102,7 @@ export function StructuredForm({
 
       <div className="flex items-center justify-between">
         <button
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-cognac-deep hover:text-cognac"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-cognac-deep hover:text-cognac-deep/70"
           onClick={() => setRows((rs) => [...rs, emptyRow(columns)])}
         >
           <IconPlus className="h-4 w-4" /> Add row
@@ -110,12 +112,14 @@ export function StructuredForm({
         </span>
       </div>
 
+      <ActionNote status={status} />
+
       <div className="flex items-center gap-3 border-t border-line pt-4">
         <motion.button
           whileTap={{ scale: 0.96 }}
           className="btn-primary"
           disabled={!ready || pending}
-          onClick={() => startTransition(async () => submitTask(taskId, { rows }))}
+          onClick={() => run(() => submitTask(taskId, { rows }))}
         >
           Submit
         </motion.button>
@@ -124,9 +128,10 @@ export function StructuredForm({
           className="btn-ghost"
           disabled={pending}
           onClick={() =>
-            startTransition(async () => {
-              await saveDraft(taskId, { rows });
-              setSavedAt(new Date().toLocaleTimeString());
+            run(async () => {
+              const r = await saveDraft(taskId, { rows });
+              if (r.ok) setSavedAt(new Date().toLocaleTimeString());
+              return r;
             })
           }
         >

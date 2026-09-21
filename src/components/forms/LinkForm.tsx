@@ -2,7 +2,9 @@
 
 import { motion } from "framer-motion";
 import { SavedToast } from "@/components/motion/SavedToast";
-import { useState, useTransition } from "react";
+import { ActionNote } from "@/components/ActionNote";
+import { useActionRunner } from "@/components/use-action-runner";
+import { useState } from "react";
 import { saveDraft, submitTask } from "@/lib/actions/submissions";
 import { IconLink } from "@/components/icons";
 
@@ -19,7 +21,7 @@ export function LinkForm({
 }) {
   const [url, setUrl] = useState(initial?.url ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
-  const [pending, startTransition] = useTransition();
+  const { run, status, pending } = useActionRunner();
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const valid = /^https?:\/\/.+\..+/.test(url.trim());
@@ -50,15 +52,15 @@ export function LinkForm({
         />
       </div>
 
+      <ActionNote status={status} />
+
       <div className="flex items-center gap-3 border-t border-line pt-4">
         <motion.button
           whileTap={{ scale: 0.96 }}
           className="btn-primary"
           disabled={!valid || pending}
           onClick={() =>
-            startTransition(async () => {
-              await submitTask(taskId, { url: url.trim(), note: note.trim() });
-            })
+            run(() => submitTask(taskId, { url: url.trim(), note: note.trim() }))
           }
         >
           Submit
@@ -68,9 +70,10 @@ export function LinkForm({
           className="btn-ghost"
           disabled={pending}
           onClick={() =>
-            startTransition(async () => {
-              await saveDraft(taskId, { url: url.trim(), note: note.trim() });
-              setSavedAt(new Date().toLocaleTimeString());
+            run(async () => {
+              const r = await saveDraft(taskId, { url: url.trim(), note: note.trim() });
+              if (r.ok) setSavedAt(new Date().toLocaleTimeString());
+              return r;
             })
           }
         >

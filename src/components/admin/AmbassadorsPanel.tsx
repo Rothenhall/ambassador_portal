@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { Avatar } from "@/components/ui/Misc";
+import { Pill } from "@/components/ui/Pill";
+import { AddPersonForm } from "@/components/admin/AddPersonForm";
 import { tierLabel } from "@/lib/signal";
 import type { AdminDashboardData } from "@/lib/admin-dashboard";
 
@@ -13,9 +16,38 @@ function relativeFromISO(iso: string | null) {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-export function AmbassadorsPanel({ ambassadors, onOpen }: { ambassadors: AdminDashboardData["ambassadors"]; onOpen: (id: string) => void }) {
+export function AmbassadorsPanel({
+  ambassadors,
+  onOpen,
+  canManage,
+  cohorts,
+  campuses,
+}: {
+  ambassadors: AdminDashboardData["ambassadors"];
+  onOpen: (id: string) => void;
+  canManage: boolean;
+  cohorts: AdminDashboardData["cohorts"];
+  campuses: AdminDashboardData["campuses"];
+}) {
+  const [adding, setAdding] = useState(false);
   return (
     <div className="px-6 py-5">
+      {canManage && (
+        <div className="mb-4 flex flex-col gap-3 rounded-sm2 border border-line bg-paper p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="eyebrow !text-[0.6rem]">People</p>
+              <p className="mt-1 text-xs text-ink-45">
+                Add an ambassador or a reviewer. They get a sign-in link, not a password.
+              </p>
+            </div>
+            <button className="btn-ghost btn-sm" onClick={() => setAdding((v) => !v)}>
+              {adding ? "Close" : "Add person"}
+            </button>
+          </div>
+          {adding && <AddPersonForm cohorts={cohorts} campuses={campuses} />}
+        </div>
+      )}
       <div className="overflow-hidden rounded-sm2 border border-line bg-paper">
         <table className="w-full border-collapse text-sm">
           <thead>
@@ -23,6 +55,7 @@ export function AmbassadorsPanel({ ambassadors, onOpen }: { ambassadors: AdminDa
               <th className="px-4 py-2 font-medium">Name</th>
               <th className="px-4 py-2 font-medium">Campus</th>
               <th className="px-4 py-2 font-medium">Tier</th>
+              <th className="px-4 py-2 font-medium">Status</th>
               <th className="px-4 py-2 font-medium text-right">Signal</th>
               <th className="px-4 py-2 font-medium text-right">Accepted/submitted</th>
               <th className="px-4 py-2 font-medium">Last activity</th>
@@ -52,6 +85,9 @@ export function AmbassadorsPanel({ ambassadors, onOpen }: { ambassadors: AdminDa
                 </td>
                 <td className="px-4 py-2 text-ink-60">{u.campusName}</td>
                 <td className="px-4 py-2 text-ink-60">{tierLabel(u.tier)}</td>
+                <td className="px-4 py-2">
+                  <Pill status={u.status} />
+                </td>
                 <td className="px-4 py-2 text-right font-medium text-ink">{u.signalTotal}</td>
                 <td className="px-4 py-2 text-right text-ink-60">
                   {u.acceptedCount}/{u.submittedCount}

@@ -2,7 +2,9 @@
 
 import { motion } from "framer-motion";
 import { SavedToast } from "@/components/motion/SavedToast";
-import { useMemo, useState, useTransition } from "react";
+import { ActionNote } from "@/components/ActionNote";
+import { useActionRunner } from "@/components/use-action-runner";
+import { useMemo, useState } from "react";
 import { saveDraft, submitTask } from "@/lib/actions/submissions";
 
 function wordCount(s: string) {
@@ -23,7 +25,7 @@ export function DocumentForm({
   initial?: { body?: string };
 }) {
   const [body, setBody] = useState(initial?.body ?? "");
-  const [pending, startTransition] = useTransition();
+  const { run, status, pending } = useActionRunner();
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const words = useMemo(() => wordCount(body), [body]);
@@ -46,12 +48,14 @@ export function DocumentForm({
         </span>
       </div>
 
+      <ActionNote status={status} />
+
       <div className="flex items-center gap-3 border-t border-line pt-4">
         <motion.button
           whileTap={{ scale: 0.96 }}
           className="btn-primary"
           disabled={!inRange || pending}
-          onClick={() => startTransition(async () => submitTask(taskId, { body, wordCount: words }))}
+          onClick={() => run(() => submitTask(taskId, { body, wordCount: words }))}
         >
           Submit
         </motion.button>
@@ -60,9 +64,10 @@ export function DocumentForm({
           className="btn-ghost"
           disabled={pending}
           onClick={() =>
-            startTransition(async () => {
-              await saveDraft(taskId, { body, wordCount: words });
-              setSavedAt(new Date().toLocaleTimeString());
+            run(async () => {
+              const r = await saveDraft(taskId, { body, wordCount: words });
+              if (r.ok) setSavedAt(new Date().toLocaleTimeString());
+              return r;
             })
           }
         >

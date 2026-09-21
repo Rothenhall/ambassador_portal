@@ -1,12 +1,17 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, type Variants } from "framer-motion";
 import { AnimatedNumber } from "@/components/motion/AnimatedNumber";
 import type { AdminDashboardData } from "@/lib/admin-dashboard";
 
-const fadeUp = {
+const fadeUp: Variants = {
   hidden: { opacity: 0, y: 12 },
   show: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.06, duration: 0.4, ease: [0.22, 1, 0.36, 1] } }),
+};
+
+const funnelVariants: Variants = {
+  hidden: { opacity: 0, scale: 0.9 },
+  show: (i: number) => ({ opacity: 1, scale: 1, transition: { delay: 0.2 + i * 0.07, duration: 0.35, ease: [0.22, 1, 0.36, 1] } }),
 };
 
 export function OverviewPanel({ data, onOpenReview }: { data: AdminDashboardData; onOpenReview?: () => void }) {
@@ -42,7 +47,7 @@ export function OverviewPanel({ data, onOpenReview }: { data: AdminDashboardData
       </div>
 
       <motion.div custom={4} variants={fadeUp} initial="hidden" animate="show" className="card p-5">
-        <p className="eyebrow mb-4 !text-[0.6rem]">This week's funnel · week {data.cohort.week}</p>
+        <p className="eyebrow mb-4 !text-[0.6rem]">This week&apos;s funnel · week {data.cohort.week}</p>
         <div className="grid grid-cols-4 gap-3 text-center">
           <Funnel index={0} label="Cells open" value={stats.funnel.opened} />
           <Funnel index={1} label="Drafted" value={stats.funnel.drafted} />
@@ -80,7 +85,7 @@ function Funnel({ index, label, value }: { index: number; label: string; value: 
   return (
     <motion.div
       custom={index}
-      variants={{ hidden: { opacity: 0, scale: 0.9 }, show: (i: number) => ({ opacity: 1, scale: 1, transition: { delay: 0.2 + i * 0.07, duration: 0.35, ease: [0.22, 1, 0.36, 1] } }) }}
+      variants={funnelVariants}
       initial="hidden"
       animate="show"
       className="rounded-sm2 border border-line bg-canvas-2/40 py-4"

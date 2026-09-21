@@ -2,11 +2,13 @@
 
 import { motion } from "framer-motion";
 import { SavedToast } from "@/components/motion/SavedToast";
-import { useMemo, useState, useTransition } from "react";
+import { ActionNote } from "@/components/ActionNote";
+import { useActionRunner } from "@/components/use-action-runner";
+import { useMemo, useState } from "react";
 import { saveDraft, submitTask } from "@/lib/actions/submissions";
 import { IconCheck } from "@/components/icons";
 
-type Question = { prompt: string; options: string[]; correctIndex: number };
+type Question = { prompt: string; options: string[]; correctIndex?: number };
 
 export function QuizForm({
   taskId,
@@ -23,19 +25,21 @@ export function QuizForm({
     initial?.answers?.length ? initial.answers : Array(questions.length).fill(null)
   );
   const [practicalText, setPracticalText] = useState(initial?.practicalText ?? "");
-  const [pending, startTransition] = useTransition();
+  const { run, status, pending } = useActionRunner();
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const answered = answers.filter((a) => a !== null).length;
+  // No client-side score: the answer key is not sent to the browser until the attempt has
+  // been graded, and the number in the database is computed server-side from the answers.
   const score = useMemo(
-    () => questions.reduce((s, q, i) => s + (answers[i] === q.correctIndex ? 1 : 0), 0),
+    () => (questions.every((q) => typeof q.correctIndex === "number") ? questions.reduce((s, q, i) => s + (answers[i] === q.correctIndex ? 1 : 0), 0) : null),
     [answers, questions]
   );
   const practicalOk = !practicalPrompt || practicalText.trim().length >= 60;
   const ready = answered === questions.length && practicalOk;
 
   function payload() {
-    return { answers: answers.map((a) => a ?? -1), practicalText, autoScore: score };
+    return { answers: answers.map((a) => a ?? -1), practicalText };
   }
 
   return (
@@ -82,19 +86,21 @@ export function QuizForm({
       )}
 
       <div className="flex items-center gap-2 rounded-sm2 bg-canvas-2 px-3.5 py-2.5 text-sm text-ink-60">
-        {score === questions.length && answered === questions.length ? (
+        {score !== null && score === questions.length && answered === questions.length ? (
           <IconCheck className="h-4 w-4 text-[#3f6b4a]" />
         ) : null}
         {answered} of {questions.length} answered
-        {answered === questions.length && ` · ${score}/${questions.length} correct so far`}
+        {score !== null && answered === questions.length && ` · ${score}/${questions.length} correct`}
       </div>
+
+      <ActionNote status={status} />
 
       <div className="flex items-center gap-3 border-t border-line pt-4">
         <motion.button
           whileTap={{ scale: 0.96 }}
           className="btn-primary"
           disabled={!ready || pending}
-          onClick={() => startTransition(async () => submitTask(taskId, payload()))}
+          onClick={() => run(() => submitTask(taskId, payload()))}
         >
           Submit
         </motion.button>
@@ -103,9 +109,10 @@ export function QuizForm({
           className="btn-ghost"
           disabled={pending}
           onClick={() =>
-            startTransition(async () => {
-              await saveDraft(taskId, payload());
-              setSavedAt(new Date().toLocaleTimeString());
+            run(async () => {
+              const r = await saveDraft(taskId, payload());
+              if (r.ok) setSavedAt(new Date().toLocaleTimeString());
+              return r;
             })
           }
         >

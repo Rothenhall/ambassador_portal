@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { TrackDot } from "@/components/ui/TrackDot";
 import { Pill } from "@/components/ui/Pill";
 import { shortDate, daysUntil } from "@/lib/format";
@@ -15,11 +15,11 @@ const FILTERS = [
   { key: "all", label: "All" },
 ];
 
-const container = {
+const container: Variants = {
   hidden: {},
   show: { transition: { staggerChildren: 0.06 } },
 };
-const item = {
+const item: Variants = {
   hidden: { opacity: 0, y: 10 },
   show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
 };

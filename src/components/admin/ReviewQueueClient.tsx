@@ -1,23 +1,28 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Avatar } from "@/components/ui/Misc";
 import { TrackDot } from "@/components/ui/TrackDot";
 import { RubricChecklist } from "@/components/ui/Rubric";
 import { SubmissionViewer } from "@/components/SubmissionViewer";
-import { reviewSubmission } from "@/lib/actions/submissions";
+import { ActionNote } from "@/components/ActionNote";
+import { useActionRunner } from "@/components/use-action-runner";
+import { reviewSubmission, claimForReview, releaseFromReview } from "@/lib/actions/submissions";
 import type { TrackKey } from "@/lib/signal";
+import type { ClientTaskConfig } from "@/lib/tasks";
 import { IconCheck, IconX } from "@/components/icons";
 
 export type QueueItem = {
   id: string;
   attemptNo: number;
+  status: string;
   ageHours: number;
-  ambassador: { name: string; color: string; campus: string; lane: string };
-  task: { code: string; title: string; track: string; submissionType: string; signalValue: number; config: any; rubric: string[] };
-  content: any;
+  claimedBy: { id: string; name: string } | null;
+  ambassador: { id: string; name: string; color: string; campus: string; lane: string; pageUrl: string | null };
+  task: { code: string; title: string; track: string; submissionType: string; signalValue: number; config: ClientTaskConfig; rubric: string[] };
+  content: Record<string, unknown>;
 };
 
 const CANNED_REASONS = [
@@ -29,58 +34,101 @@ const CANNED_REASONS = [
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
-export function ReviewQueueClient({ items: initial }: { items: QueueItem[] }) {
+export function ReviewQueueClient({
+  items: initial,
+  me,
+}: {
+  items: QueueItem[];
+  me: { id: string; name: string; role: string };
+}) {
   const router = useRouter();
   const [items, setItems] = useState(initial);
-  const [selectedId, setSelectedId] = useState(initial[0]?.id ?? null);
-  const [rubricState, setRubricState] = useState<boolean[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(initial[0]?.id ?? null);
+  const [rubricState, setRubricState] = useState<boolean[]>(() => Array(initial[0]?.task.rubric.length ?? 0).fill(false));
   const [feedback, setFeedback] = useState("");
   const [mode, setMode] = useState<"idle" | "changes">("idle");
   const [confirmFlash, setConfirmFlash] = useState<"accepted" | "changes_requested" | "rejected" | null>(null);
-  const [pending, startTransition] = useTransition();
+  const { run, status, pending } = useActionRunner();
   const feedbackRef = useRef<HTMLTextAreaElement>(null);
 
   const selected = items.find((i) => i.id === selectedId) ?? null;
   const selectedIndex = items.findIndex((i) => i.id === selectedId);
 
+  /** Opening an attempt starts a fresh draft for it: rubric unchecked, feedback empty, panel closed. */
+  const select = useCallback(
+    (id: string | null) => {
+      // Re-opening the row that is already up must not discard a half-typed review.
+      if (id === selectedId) return;
+      const item = items.find((i) => i.id === id) ?? null;
+      setSelectedId(id);
+      setRubricState(item ? Array(item.task.rubric.length).fill(false) : []);
+      setFeedback("");
+      setMode("idle");
+    },
+    [items, selectedId]
+  );
+
+  // Opening an unclaimed attempt puts it on this reviewer's desk, so a second reviewer gets
+  // a clear "already opened by X" instead of silently overwriting the first decision.
   useEffect(() => {
-    setRubricState(selected ? Array(selected.task.rubric.length).fill(false) : []);
-    setFeedback("");
-    setMode("idle");
+    if (!selected || selected.status !== "submitted") return;
+    let cancelled = false;
+    (async () => {
+      const result = await claimForReview(selected.id);
+      if (cancelled || !result.ok) return;
+      setItems((prev) => prev.map((i) => (i.id === selected.id ? { ...i, status: "in_review", claimedBy: { id: me.id, name: me.name } } : i)));
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
   const allChecked = selected ? rubricState.length > 0 && rubricState.every(Boolean) : false;
+  const mineOrUnclaimed = !selected?.claimedBy || selected.claimedBy.id === me.id;
 
-  function advanceAfterDecision(id: string) {
-    setItems((prev) => {
-      const next = prev.filter((i) => i.id !== id);
-      const oldIndex = prev.findIndex((i) => i.id === id);
-      const newSelected = next[Math.min(oldIndex, next.length - 1)];
-      setSelectedId(newSelected?.id ?? null);
-      return next;
-    });
-  }
+  const advanceAfterDecision = useCallback(
+    (id: string) => {
+      const oldIndex = items.findIndex((i) => i.id === id);
+      const next = items.filter((i) => i.id !== id);
+      setItems((prev) => prev.filter((i) => i.id !== id));
+      select(next[Math.min(oldIndex, next.length - 1)]?.id ?? null);
+    },
+    [items, select]
+  );
 
-  function decide(decision: "accepted" | "changes_requested" | "rejected") {
-    if (!selected || pending) return;
-    const id = selected.id;
-    startTransition(async () => {
-      await reviewSubmission(id, decision, rubricState, feedback || (decision === "accepted" ? "Clean. Nothing to add." : CANNED_REASONS[0]));
-      router.refresh();
-      setConfirmFlash(decision);
-      setTimeout(() => {
-        setConfirmFlash(null);
-        advanceAfterDecision(id);
-      }, 550);
-    });
-  }
+  const decide = useCallback(
+    (decision: "accepted" | "changes_requested" | "rejected") => {
+      if (!selected || pending) return;
+      const id = selected.id;
+      const note = feedback.trim() || (decision === "accepted" ? "Clean. Nothing to add." : CANNED_REASONS[0]);
+      void run(() => reviewSubmission(id, decision, rubricState, note)).then((result) => {
+        if (!result?.ok) {
+          router.refresh();
+          return;
+        }
+        router.refresh();
+        setConfirmFlash(decision);
+        setTimeout(() => {
+          setConfirmFlash(null);
+          advanceAfterDecision(id);
+        }, 550);
+      });
+    },
+    [advanceAfterDecision, feedback, pending, router, rubricState, run, selected]
+  );
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return;
-      if (e.key === "j") setSelectedId((cur) => items[Math.min(items.findIndex((i) => i.id === cur) + 1, items.length - 1)]?.id ?? cur);
-      if (e.key === "k") setSelectedId((cur) => items[Math.max(items.findIndex((i) => i.id === cur) - 1, 0)]?.id ?? cur);
+      const moveTo = (delta: number) => {
+        const cur = items.findIndex((i) => i.id === selectedId);
+        const target = items[Math.min(Math.max(cur + delta, 0), items.length - 1)];
+        if (target) select(target.id);
+      };
+      if (e.key === "j") moveTo(1);
+      if (e.key === "k") moveTo(-1);
       if (e.key === "a") decide("accepted");
       if (e.key === "c") {
         setMode("changes");
@@ -89,8 +137,7 @@ export function ReviewQueueClient({ items: initial }: { items: QueueItem[] }) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, selectedId, rubricState, feedback]);
+  }, [decide, items, select, selectedId]);
 
   if (items.length === 0) {
     return (
@@ -113,6 +160,7 @@ export function ReviewQueueClient({ items: initial }: { items: QueueItem[] }) {
           {items.map((item) => {
             const active = item.id === selectedId;
             const old = item.ageHours > 48;
+            const heldByOther = Boolean(item.claimedBy && item.claimedBy.id !== me.id);
             return (
               <motion.button
                 key={item.id}
@@ -121,7 +169,7 @@ export function ReviewQueueClient({ items: initial }: { items: QueueItem[] }) {
                 animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, x: 60, height: 0, transition: { duration: 0.3, ease } }}
                 transition={{ duration: 0.3, ease }}
-                onClick={() => setSelectedId(item.id)}
+                onClick={() => select(item.id)}
                 className={`flex flex-col gap-1 overflow-hidden border-b border-line px-4 py-3 text-left transition-colors ${
                   active ? "bg-paper shadow-[inset_2px_0_0_#a85c30]" : "hover:bg-paper/60"
                 }`}
@@ -136,6 +184,9 @@ export function ReviewQueueClient({ items: initial }: { items: QueueItem[] }) {
                 <span className="text-xs text-ink-45">
                   {item.task.code} · {item.task.title}
                 </span>
+                {heldByOther && (
+                  <span className="text-[0.68rem] text-brass-deep">with {item.claimedBy?.name}</span>
+                )}
               </motion.button>
             );
           })}
@@ -164,12 +215,22 @@ export function ReviewQueueClient({ items: initial }: { items: QueueItem[] }) {
                 <span className="text-xs text-ink-45">
                   {selected.ambassador.campus} · {selected.ambassador.lane}
                 </span>
+                {selected.claimedBy && (
+                  <span className="text-xs text-brass-deep">
+                    {selected.claimedBy.id === me.id ? "yours" : `with ${selected.claimedBy.name}`}
+                  </span>
+                )}
               </div>
 
               <div className="flex flex-1 flex-col gap-5 px-6 py-5">
                 <div className="rounded-sm2 border border-line bg-paper p-4">
                   <p className="eyebrow mb-3">Submission</p>
-                  <SubmissionViewer type={selected.task.submissionType} config={selected.task.config} content={selected.content} />
+                  <SubmissionViewer
+                    type={selected.task.submissionType}
+                    config={selected.task.config}
+                    content={selected.content}
+                    ambassadorPageUrl={selected.ambassador.pageUrl}
+                  />
                 </div>
 
                 <div>
@@ -200,25 +261,50 @@ export function ReviewQueueClient({ items: initial }: { items: QueueItem[] }) {
                 </AnimatePresence>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2.5 border-t border-line bg-canvas-2/30 px-6 py-4">
-                <motion.button whileTap={{ scale: 0.96 }} className="btn-primary" disabled={!allChecked || pending} onClick={() => decide("accepted")}>
-                  <IconCheck className="h-4 w-4" /> Accept · +{selected.task.signalValue}
-                </motion.button>
-                {mode === "changes" ? (
-                  <motion.button whileTap={{ scale: 0.96 }} className="btn-ghost" disabled={!feedback.trim() || pending} onClick={() => decide("changes_requested")}>
-                    Send changes requested
-                  </motion.button>
-                ) : (
-                  <motion.button whileTap={{ scale: 0.96 }} className="btn-ghost" onClick={() => setMode("changes")}>
-                    Request changes
-                  </motion.button>
+              <div className="flex flex-col gap-2 border-t border-line bg-canvas-2/30 px-6 py-4">
+                <ActionNote status={status} />
+                {!mineOrUnclaimed && (
+                  <p className="text-xs text-cognac-deep">
+                    Opened by {selected.claimedBy?.name}. Their decision wins; ask them to hand it back.
+                  </p>
                 )}
-                <motion.button whileTap={{ scale: 0.96 }} className="btn-danger-ghost" disabled={pending} onClick={() => decide("rejected")}>
-                  <IconX className="h-4 w-4" /> Reject
-                </motion.button>
-                <span className="ml-auto font-mono text-xs text-ink-45">
-                  {selectedIndex + 1} / {items.length} · J K move · A accept · C changes
-                </span>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <motion.button whileTap={{ scale: 0.96 }} className="btn-primary" disabled={!allChecked || pending || !mineOrUnclaimed} onClick={() => decide("accepted")}>
+                    <IconCheck className="h-4 w-4" /> Accept · +{selected.task.signalValue}
+                  </motion.button>
+                  {mode === "changes" ? (
+                    <motion.button whileTap={{ scale: 0.96 }} className="btn-ghost" disabled={!feedback.trim() || pending || !mineOrUnclaimed} onClick={() => decide("changes_requested")}>
+                      Send changes requested
+                    </motion.button>
+                  ) : (
+                    <motion.button whileTap={{ scale: 0.96 }} className="btn-ghost" disabled={!mineOrUnclaimed} onClick={() => setMode("changes")}>
+                      Request changes
+                    </motion.button>
+                  )}
+                  <motion.button whileTap={{ scale: 0.96 }} className="btn-danger-ghost" disabled={pending || !mineOrUnclaimed} onClick={() => decide("rejected")}>
+                    <IconX className="h-4 w-4" /> Reject
+                  </motion.button>
+                  {selected.claimedBy?.id === me.id && (
+                    <motion.button
+                      whileTap={{ scale: 0.96 }}
+                      className="btn-ghost"
+                      disabled={pending}
+                      onClick={() =>
+                        void run(() => releaseFromReview(selected.id)).then((result) => {
+                          if (!result?.ok) return;
+                          setItems((prev) =>
+                            prev.map((i) => (i.id === selected.id ? { ...i, status: "submitted", claimedBy: null } : i))
+                          );
+                        })
+                      }
+                    >
+                      Hand back
+                    </motion.button>
+                  )}
+                  <span className="ml-auto font-mono text-xs text-ink-45">
+                    {selectedIndex + 1} / {items.length} · J K move · A accept · C changes
+                  </span>
+                </div>
               </div>
             </motion.div>
           )}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { getActionAdmin } from "@/lib/auth";
+import { parseContent } from "@/lib/tasks";
 
 function csvEscape(v: string) {
   if (/[",\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
@@ -8,7 +9,9 @@ function csvEscape(v: string) {
 }
 
 export async function GET() {
-  await requireAdmin();
+  // Guarded here as well as in middleware: this route returns the whole measurement corpus.
+  const { user, error } = await getActionAdmin();
+  if (!user) return new NextResponse(error ?? "Sign in as an admin first.", { status: 403 });
 
   const submissions = await db.submission.findMany({
     where: { task: { submissionType: "structured" } },
@@ -19,12 +22,7 @@ export async function GET() {
   const lines = [header.join(",")];
 
   for (const s of submissions) {
-    let content: { rows?: Record<string, string>[] } = {};
-    try {
-      content = JSON.parse(s.content);
-    } catch {
-      continue;
-    }
+    const content = parseContent(s) as { rows?: Record<string, string>[] };
     for (const row of content.rows ?? []) {
       lines.push(
         [

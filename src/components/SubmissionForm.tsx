@@ -1,4 +1,6 @@
-import type { TaskConfig } from "@/lib/tasks";
+import type { ClientTaskConfig } from "@/lib/tasks";
+import type { SubmissionContent } from "@/lib/submission-content";
+import { draft } from "@/lib/submission-content";
 import { LinkForm } from "@/components/forms/LinkForm";
 import { LinkSetForm } from "@/components/forms/LinkSetForm";
 import { DocumentForm } from "@/components/forms/DocumentForm";
@@ -15,14 +17,14 @@ export function SubmissionForm({
 }: {
   taskId: string;
   type: string;
-  config: TaskConfig;
-  initial?: Record<string, any>;
+  config: ClientTaskConfig;
+  initial?: SubmissionContent;
 }) {
   switch (type) {
     case "link":
-      return <LinkForm taskId={taskId} label={config.link?.label ?? "URL"} placeholder={config.link?.placeholder ?? "https://"} initial={initial} />;
+      return <LinkForm taskId={taskId} label={config.link?.label ?? "URL"} placeholder={config.link?.placeholder ?? "https://"} initial={draft(initial)} />;
     case "link_set":
-      return <LinkSetForm taskId={taskId} rows={config.link_set?.rows ?? []} initial={initial} />;
+      return <LinkSetForm taskId={taskId} rows={config.link_set?.rows ?? []} initial={draft(initial)} />;
     case "document":
       return (
         <DocumentForm
@@ -30,7 +32,7 @@ export function SubmissionForm({
           minWords={config.document?.minWords ?? 0}
           maxWords={config.document?.maxWords ?? 10000}
           placeholder={config.document?.placeholder ?? ""}
-          initial={initial}
+          initial={draft(initial)}
         />
       );
     case "upload":
@@ -40,7 +42,7 @@ export function SubmissionForm({
           maxFiles={config.upload?.maxFiles ?? 4}
           label={config.upload?.label ?? "Files"}
           captionLabel={config.upload?.captionLabel}
-          initial={initial}
+          initial={draft(initial)}
         />
       );
     case "structured":
@@ -49,18 +51,18 @@ export function SubmissionForm({
           taskId={taskId}
           columns={config.structured?.columns ?? []}
           minRows={config.structured?.minRows ?? 1}
-          initial={initial}
+          initial={draft(initial)}
         />
       );
     case "roster":
-      return <RosterForm taskId={taskId} fields={config.roster?.fields ?? []} minRows={config.roster?.minRows ?? 1} initial={initial} />;
+      return <RosterForm taskId={taskId} fields={config.roster?.fields ?? []} minRows={config.roster?.minRows ?? 1} initial={draft(initial)} />;
     case "quiz":
       return (
         <QuizForm
           taskId={taskId}
           questions={config.quiz?.questions ?? []}
           practicalPrompt={config.quiz?.practicalPrompt}
-          initial={initial}
+          initial={draft(initial)}
         />
       );
     default:

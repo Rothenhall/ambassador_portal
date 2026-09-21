@@ -36,6 +36,13 @@ export function Dashboard({ data, initialTab }: { data: AmbassadorDashboardData;
     return s;
   }, [data.tasks, data.week]);
 
+  // The Library's "open assessment" button used to hardcode task code D7, which broke the
+  // moment an assessment was renumbered or the cohort ran without it.
+  const assessmentTask = useMemo(
+    () => data.tasks.filter((t) => t.submissionType === "quiz").sort((a, b) => b.week - a.week)[0] ?? null,
+    [data.tasks]
+  );
+
   const nextReward = useMemo(() => {
     const granted = new Set(data.grants.filter((g) => g.status !== "locked").map((g) => g.rewardId));
     return (
@@ -62,7 +69,6 @@ export function Dashboard({ data, initialTab }: { data: AmbassadorDashboardData;
           tier={data.membership.tier}
           signalTotal={data.membership.signalTotal}
           certificate={data.certificate}
-          onVerify={() => data.certificate && window.open(`/verify/${data.certificate.publicId}`, "_blank")}
         />
       ),
     },
@@ -74,7 +80,7 @@ export function Dashboard({ data, initialTab }: { data: AmbassadorDashboardData;
     {
       key: "library",
       label: "Library",
-      panel: <LibraryPanel modules={data.modules} completedIds={data.moduleProgress} onOpenAssessment={() => setOpenCode("D7")} />,
+      panel: <LibraryPanel modules={data.modules} completedIds={data.moduleProgress} assessmentCode={assessmentTask?.code ?? null} onOpenAssessment={(code) => setOpenCode(code)} />,
     },
   ];
 
@@ -88,7 +94,7 @@ export function Dashboard({ data, initialTab }: { data: AmbassadorDashboardData;
               <span className="font-display text-sm font-bold leading-none">{data.membership.signalTotal}</span>
               <span className="eyebrow !text-[0.56rem] text-ink-45">Signal</span>
             </span>
-            <UserMenu name={data.user.name} role={data.user.role} color={data.user.avatarColor} />
+            <UserMenu name={data.user.name} role={data.user.role} color={data.user.avatarColor} profileHref="/home?tab=circle" />
           </div>
         </header>
 
@@ -109,7 +115,7 @@ export function Dashboard({ data, initialTab }: { data: AmbassadorDashboardData;
           </motion.button>
         )}
 
-        <div className="mx-auto max-w-5xl pb-10">
+        <main id="main" className="mx-auto max-w-5xl pb-10">
           <ProgressHero
             name={data.user.name}
             signal={data.membership.signalTotal}
@@ -135,9 +141,9 @@ export function Dashboard({ data, initialTab }: { data: AmbassadorDashboardData;
 
           <div className="mt-6">
             {/* top-16 parks the tab bar directly under the locked h-16 header. */}
-            <TabSwitcher tabs={tabs} initial={initialTab} stickyTop="top-16" />
+            <TabSwitcher tabs={tabs} initial={initialTab} stickyTop="top-16" label="Your console" />
           </div>
-        </div>
+        </main>
       </div>
 
       <Drawer

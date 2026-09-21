@@ -1,5 +1,6 @@
 import { Avatar } from "@/components/ui/Misc";
 import { Pill } from "@/components/ui/Pill";
+import { ActionButton } from "@/components/admin/ActionButton";
 import { fulfillGrant } from "@/lib/actions/rewards";
 import type { AdminDashboardData } from "@/lib/admin-dashboard";
 
@@ -11,7 +12,13 @@ function relativeFromISO(iso: string) {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-export function AdminRewardsPanel({ grants }: { grants: AdminDashboardData["rewardGrants"] }) {
+export function AdminRewardsPanel({
+  grants,
+  canFulfil,
+}: {
+  grants: AdminDashboardData["rewardGrants"];
+  canFulfil: boolean;
+}) {
   const toFulfil = grants.filter((g) => g.status === "claimed");
   const fulfilled = grants.filter((g) => g.status === "fulfilled");
 
@@ -21,7 +28,7 @@ export function AdminRewardsPanel({ grants }: { grants: AdminDashboardData["rewa
         <p className="eyebrow mb-2.5 !text-[0.6rem]">Fulfilment queue</p>
         <div className="flex flex-col gap-2.5">
           {toFulfil.map((g) => (
-            <div key={g.id} className="card flex items-center gap-3.5 p-3.5">
+            <div key={g.id} className="card flex flex-wrap items-center gap-3.5 p-3.5">
               <Avatar name={g.userName} color={g.userColor} size={30} />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-ink">{g.rewardName}</p>
@@ -30,13 +37,24 @@ export function AdminRewardsPanel({ grants }: { grants: AdminDashboardData["rewa
                   {g.detail && ` · ${g.detail}`}
                 </p>
               </div>
-              <form action={fulfillGrant.bind(null, g.id)}>
-                <button className="btn-primary btn-sm">Mark fulfilled</button>
-              </form>
+              {canFulfil ? (
+                <ActionButton
+                  action={() => fulfillGrant(g.id)}
+                  label={g.rewardCode === "certificate" ? "Issue certificate" : "Mark fulfilled"}
+                />
+              ) : (
+                <span className="text-xs text-ink-45">Admin only</span>
+              )}
             </div>
           ))}
           {toFulfil.length === 0 && <p className="py-4 text-center text-sm text-ink-45">Nothing waiting on fulfilment.</p>}
         </div>
+        {toFulfil.some((g) => g.rewardCode === "certificate") && canFulfil && (
+          <p className="mt-2.5 text-xs text-ink-45">
+            Issuing a certificate reads the accepted D-track assessment and scores it server-side. If nobody has passed one yet,
+            the button says so rather than ticking it off.
+          </p>
+        )}
       </div>
 
       {fulfilled.length > 0 && (

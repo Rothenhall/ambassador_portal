@@ -76,7 +76,14 @@ export function TaskDrawerContent({ task }: { task: DashTask }) {
               Accepted, +{task.signalValue} Signal
             </div>
           )}
-          {latest.feedbackMd && latest.status === "accepted" && <p className="text-sm text-ink-60">&ldquo;{latest.feedbackMd}&rdquo;</p>}
+          {latest.status === "rejected" && (
+            <div className="rounded-sm2 border border-cognac-deep/25 bg-cognac-deep/5 px-4 py-2.5 text-sm text-cognac-deep">
+              This attempt was rejected against the rubric and cannot be resubmitted.
+            </div>
+          )}
+          {latest.feedbackMd && (latest.status === "accepted" || latest.status === "rejected") && (
+            <p className="text-sm text-ink-60">&ldquo;{latest.feedbackMd}&rdquo;</p>
+          )}
         </div>
       )}
 

@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useActionRunner } from "@/components/use-action-runner";
+import { ActionNote } from "@/components/ActionNote";
 import { Avatar } from "@/components/ui/Misc";
 import { Toggle } from "@/components/ui/Toggle";
 import { IconArrowUpRight } from "@/components/icons";
 import { updateProfile, setVisibility } from "@/lib/actions/profile";
+import { PasswordForm } from "@/components/PasswordForm";
 import type { AmbassadorDashboardData } from "@/lib/dashboard";
 
 export function CirclePanel({
@@ -51,6 +54,11 @@ export function CirclePanel({
       </div>
 
       <div className="flex flex-col gap-3">
+        <div className="card p-4">
+          <p className="eyebrow mb-2 !text-[0.6rem]">Password</p>
+          <PasswordForm hasPassword={me.hasPassword} email={me.email} />
+        </div>
+
         <div className="card p-3.5">
           <p className="eyebrow !text-[0.6rem]">Your rank</p>
           <p className="font-display text-2xl">
@@ -82,7 +90,7 @@ export function CirclePanel({
 
 function ProfileCard({ me }: { me: AmbassadorDashboardData["user"] }) {
   const [editing, setEditing] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const { run, status, pending } = useActionRunner();
   const [pageUrl, setPageUrl] = useState(me.pageUrl ?? "");
   const [lane, setLane] = useState(me.lane ?? "");
   const [bio, setBio] = useState(me.bio ?? "");
@@ -99,23 +107,14 @@ function ProfileCard({ me }: { me: AmbassadorDashboardData["user"] }) {
             </button>
           </div>
           <p className="text-xs text-ink-45">{me.email}</p>
+          <a href="/home/letter" target="_blank" rel="noreferrer" className="link-line mt-1 inline-block border-0 text-xs font-medium text-cognac-deep">
+            Your appointment letter &rarr;
+          </a>
         </div>
       </div>
 
       {editing ? (
-        <form
-          className="mt-4 flex flex-col gap-3"
-          action={() => {
-            const fd = new FormData();
-            fd.set("pageUrl", pageUrl);
-            fd.set("lane", lane);
-            fd.set("bio", bio);
-            startTransition(async () => {
-              await updateProfile(fd);
-              setEditing(false);
-            });
-          }}
-        >
+        <div className="mt-4 flex flex-col gap-3">
           <input className="input" placeholder="Your page URL" value={pageUrl} onChange={(e) => setPageUrl(e.target.value)} />
           <input className="input" placeholder="Lane" value={lane} onChange={(e) => setLane(e.target.value)} />
           <textarea className="input" rows={2} placeholder="Short bio" value={bio} onChange={(e) => setBio(e.target.value)} />
@@ -125,10 +124,25 @@ function ProfileCard({ me }: { me: AmbassadorDashboardData["user"] }) {
             <VisibilityRow label="Show me on the leaderboard" initial={me.showOnLeaderboard} field="showOnLeaderboard" />
           </div>
 
-          <button className="btn-primary btn-sm self-start" disabled={pending}>
-            Save
+          <button
+            className="btn-primary btn-sm self-start"
+            disabled={pending}
+            onClick={() =>
+              run(async () => {
+                const fd = new FormData();
+                fd.set("pageUrl", pageUrl);
+                fd.set("lane", lane);
+                fd.set("bio", bio);
+                const result = await updateProfile(fd);
+                if (result.ok) setEditing(false);
+                return result;
+              })
+            }
+          >
+            {pending ? "Saving..." : "Save"}
           </button>
-        </form>
+          <ActionNote status={status} />
+        </div>
       ) : (
         me.lane && <p className="mt-2 text-sm text-ink-60">{me.lane}</p>
       )}

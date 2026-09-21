@@ -1,18 +1,23 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { claimReward } from "@/lib/actions/rewards";
+import { useActionRunner } from "@/components/use-action-runner";
+import { ActionNote } from "@/components/ActionNote";
 
 export function RewardClaim({ rewardId, fulfilmentType }: { rewardId: string; fulfilmentType: string }) {
   const [open, setOpen] = useState(false);
   const [address, setAddress] = useState("");
-  const [pending, startTransition] = useTransition();
+  const { run, status, pending } = useActionRunner();
 
   if (fulfilmentType === "shipped" && !open) {
     return (
-      <button className="btn-primary btn-sm" onClick={() => setOpen(true)}>
-        Claim
-      </button>
+      <div className="flex flex-col items-end gap-1.5">
+        <button className="btn-primary btn-sm" disabled={pending} onClick={() => setOpen(true)}>
+          Claim
+        </button>
+        <ActionNote status={status} className="!max-w-[16rem] text-right" />
+      </div>
     );
   }
 
@@ -28,18 +33,26 @@ export function RewardClaim({ rewardId, fulfilmentType }: { rewardId: string; fu
         />
         <button
           className="btn-primary btn-sm self-start"
-          disabled={!address.trim() || pending}
-          onClick={() => startTransition(async () => claimReward(rewardId, address.trim()))}
+          disabled={address.trim().length < 10 || pending}
+          onClick={() => run(() => claimReward(rewardId, address.trim()))}
         >
-          Confirm address
+          {pending ? "Claiming..." : "Confirm address"}
         </button>
+        <ActionNote status={status} />
       </div>
     );
   }
 
   return (
-    <button className="btn-primary btn-sm" disabled={pending} onClick={() => startTransition(async () => claimReward(rewardId))}>
-      {fulfilmentType === "scheduled" ? "Request" : "Claim"}
-    </button>
+    <div className="flex flex-col items-end gap-1.5">
+      <button
+        className="btn-primary btn-sm"
+        disabled={pending}
+        onClick={() => run(() => claimReward(rewardId))}
+      >
+        {pending ? "Claiming..." : fulfilmentType === "scheduled" ? "Request" : "Claim"}
+      </button>
+      <ActionNote status={status} className="!max-w-[16rem]" />
+    </div>
   );
 }

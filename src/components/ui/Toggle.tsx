@@ -8,7 +8,7 @@ export function Toggle({
   onChange,
 }: {
   initial: boolean;
-  onChange: (value: boolean) => Promise<void>;
+  onChange: (value: boolean) => Promise<unknown>;
 }) {
   const [value, setValue] = useState(initial);
   const [pending, startTransition] = useTransition();
@@ -22,7 +22,9 @@ export function Toggle({
       onClick={() => {
         const next = !value;
         setValue(next);
-        startTransition(async () => onChange(next));
+        startTransition(async () => {
+          await onChange(next);
+        });
       }}
       animate={{ backgroundColor: value ? "#9a7a4a" : "#cbc0a9" }}
       transition={{ duration: 0.3 }}

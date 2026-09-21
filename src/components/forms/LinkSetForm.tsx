@@ -2,7 +2,9 @@
 
 import { motion } from "framer-motion";
 import { SavedToast } from "@/components/motion/SavedToast";
-import { useState, useTransition } from "react";
+import { ActionNote } from "@/components/ActionNote";
+import { useActionRunner } from "@/components/use-action-runner";
+import { useState } from "react";
 import { saveDraft, submitTask } from "@/lib/actions/submissions";
 
 export function LinkSetForm({
@@ -18,7 +20,7 @@ export function LinkSetForm({
   const [values, setValues] = useState<Record<string, string>>(
     Object.fromEntries(rows.map((r) => [r.key, initialMap.get(r.key) ?? ""]))
   );
-  const [pending, startTransition] = useTransition();
+  const { run, status, pending } = useActionRunner();
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   const filledCount = rows.filter((r) => values[r.key]?.trim()).length;
@@ -47,12 +49,14 @@ export function LinkSetForm({
         {filledCount} of {rows.length} filled in
       </p>
 
+      <ActionNote status={status} />
+
       <div className="flex items-center gap-3 border-t border-line pt-4">
         <motion.button
           whileTap={{ scale: 0.96 }}
           className="btn-primary"
           disabled={!allValid || pending}
-          onClick={() => startTransition(async () => submitTask(taskId, payload()))}
+          onClick={() => run(() => submitTask(taskId, payload()))}
         >
           Submit
         </motion.button>
@@ -61,9 +65,10 @@ export function LinkSetForm({
           className="btn-ghost"
           disabled={pending}
           onClick={() =>
-            startTransition(async () => {
-              await saveDraft(taskId, payload());
-              setSavedAt(new Date().toLocaleTimeString());
+            run(async () => {
+              const r = await saveDraft(taskId, payload());
+              if (r.ok) setSavedAt(new Date().toLocaleTimeString());
+              return r;
             })
           }
         >

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { motion } from "framer-motion";
+import { motion, type Variants } from "framer-motion";
 import { SignalMeter } from "@/components/ui/SignalMeter";
 import { LoopDiagram } from "@/components/ui/LoopDiagram";
 import { TrackRing } from "@/components/ui/TrackRing";
@@ -13,7 +13,7 @@ import type { DashTask, AmbassadorDashboardData } from "@/lib/dashboard";
 
 const TRACKS_ORDER: TrackKey[] = ["A", "B", "C", "D", "E"];
 
-const fadeUp = {
+const fadeUp: Variants = {
   hidden: { opacity: 0, y: 12 },
   show: (i: number) => ({ opacity: 1, y: 0, transition: { delay: i * 0.06, duration: 0.4, ease: [0.22, 1, 0.36, 1] } }),
 };

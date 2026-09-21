@@ -13,7 +13,7 @@ export default function ApplyPage() {
 
   return (
     <div className="min-h-screen bg-canvas">
-      <div className="mx-auto max-w-xl px-6 py-16 sm:px-8">
+      <main id="main" className="mx-auto max-w-xl px-6 py-16 sm:px-8">
         <motion.p initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="eyebrow">
           Rothenhall Partners
         </motion.p>
@@ -54,8 +54,7 @@ export default function ApplyPage() {
               </motion.span>
               <p className="font-display text-lg">Sent.</p>
               <p className="max-w-xs text-sm text-ink-60">
-                We read every application. If it's a fit, an invite and a login arrive by email, no other action needed
-                from you.
+                {state.message ?? "We read every application. If it's a fit, an account and a sign-in link arrive by email, no other action needed from you."}
               </p>
             </motion.div>
           ) : (
@@ -76,20 +75,26 @@ export default function ApplyPage() {
                 <label className="mb-1.5 block text-sm font-medium text-ink">Email</label>
                 <input name="email" type="email" className="input" required />
               </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-ink">Campus</label>
-                <input name="campus" className="input" required />
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink">Campus</label>
+                  <input name="campus" className="input" required />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-ink">City</label>
+                  <input name="city" className="input" placeholder="Where you study" />
+                </div>
               </div>
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-ink">Field you'd write about</label>
+                <label className="mb-1.5 block text-sm font-medium text-ink">Field you&apos;d write about</label>
                 <input name="field" className="input" required />
               </div>
 
               <div className="rounded-sm2 border border-line bg-canvas-2/50 p-4">
                 <p className="text-sm font-medium text-ink">The one task</p>
                 <p className="mt-1 text-sm text-ink-60">
-                  Open ChatGPT or Claude. Ask it: <em>"Who are the best people to follow on [your field] in [your
-                  city]?"</em> In 150 words, tell us what you noticed about who it named and who it did not.
+                  Open ChatGPT or Claude. Ask it: <em>&quot;Who are the best people to follow on [your field] in [your
+                  city]?&quot;</em> In 150 words, tell us what you noticed about who it named and who it did not.
                 </p>
               </div>
               <div>
@@ -116,7 +121,7 @@ export default function ApplyPage() {
             </motion.form>
           )}
         </AnimatePresence>
-      </div>
+      </main>
     </div>
   );
 }

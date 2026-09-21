@@ -1,15 +1,28 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { getActionUser } from "@/lib/auth";
+import { ok, fail, type ActionResult } from "@/lib/action-result";
+import { revalidateAmbassador } from "@/lib/audit";
 
-export async function markModuleComplete(moduleId: string) {
-  const user = await requireUser();
+export async function setModuleComplete(moduleId: string, completed: boolean): Promise<ActionResult> {
+  const { user, error } = await getActionUser();
+  if (!user) return fail(error ?? "Sign in first.");
+
+  const mod = await db.libraryModule.findUnique({ where: { id: moduleId }, select: { id: true } });
+  if (!mod) return fail("That module is no longer in the library.");
+
+  if (!completed) {
+    await db.moduleProgress.updateMany({ where: { userId: user.id, moduleId }, data: { completedAt: null } });
+    revalidateAmbassador();
+    return ok();
+  }
+
   await db.moduleProgress.upsert({
     where: { userId_moduleId: { userId: user.id, moduleId } },
     update: { completedAt: new Date() },
     create: { userId: user.id, moduleId, completedAt: new Date() },
   });
-  revalidatePath("/library");
+  revalidateAmbassador();
+  return ok(undefined, "Marked done.");
 }

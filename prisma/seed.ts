@@ -1,10 +1,22 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
+import { generatePassword, hashPassword } from "../src/lib/password";
 
 const db = new PrismaClient();
+
+/** Write a plain JS value into a Json column. */
+const json = (value: unknown) => value as Prisma.InputJsonValue;
+
+/** Row-level read of a Json rubric column, so the seed does not re-parse strings. */
+function rubricLength(rubric: unknown) {
+  return Array.isArray(rubric) ? rubric.length : 0;
+}
 
 type Track = "A" | "B" | "C" | "D" | "E";
 type SubmissionType = "link" | "link_set" | "document" | "upload" | "structured" | "roster" | "quiz";
 type Tier = "applicant" | "ambassador" | "senior" | "campus_lead" | "alumnus";
+
+const ADMIN_PASSWORD = "Circle-Operator-2026";
+const REVIEWER_PASSWORD = "Circle-Review-2026";
 
 function addDays(d: Date, n: number) {
   const r = new Date(d);
@@ -588,9 +600,26 @@ const AMBASSADORS: AmbassadorSeed[] = [
 ];
 
 async function main() {
+  // This file invents ten people, their work, their Signal and a certificate that verifies
+  // publicly. Run against a real database and the programme has a fake cohort in it that
+  // looks identical to the real thing. So it refuses outside development unless someone
+  // says the quiet part out loud with ALLOW_DEMO_SEED=1.
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED !== "1") {
+    console.error(
+      "Refusing to seed demo data into a production database.\n"
+        + "  Real accounts come from scripts/bootstrap.ts (first admin) and the admin console.\n"
+        + "  If you really mean it, re-run with ALLOW_DEMO_SEED=1."
+    );
+    process.exit(1);
+  }
+
   console.log("Seeding Campus Circle...");
 
   // Clean slate.
+  // Identity and audit rows point at users, so they go first.
+  await db.auditEvent.deleteMany();
+  await db.session.deleteMany();
+  await db.magicLink.deleteMany();
   await db.signalLedger.deleteMany();
   await db.review.deleteMany();
   await db.submission.deleteMany();
@@ -616,20 +645,44 @@ async function main() {
   );
   const campusByName = new Map(campusRows.map((c) => [c.name, c]));
 
+  // Demo credentials. Operators get fixed, typeable passwords because they are re-typed
+  // during every review pass; ambassadors get random ones, printed once at the end of the
+  // seed. This is seed data for a preview cohort, not a production bootstrap.
+  const credentials: { email: string; password: string; who: string }[] = [];
+
   const admin = await db.user.create({
-    data: { email: "kunal@rothenhall.com", name: "Kunal Mehta", role: "admin", avatarColor: "#1a1712" },
+    data: {
+      email: "kunal@rothenhall.com",
+      name: "Kunal Mehta",
+      role: "admin",
+      avatarColor: "#1a1712",
+      passwordHash: hashPassword(ADMIN_PASSWORD),
+      passwordSetAt: new Date(),
+    },
   });
-  await db.user.create({
-    data: { email: "ishaan@rothenhall.com", name: "Ishaan Verma", role: "reviewer", avatarColor: "#7c6238" },
+  credentials.push({ email: admin.email, password: ADMIN_PASSWORD, who: "admin" });
+  const reviewer = await db.user.create({
+    data: {
+      email: "ishaan@rothenhall.com",
+      name: "Ishaan Verma",
+      role: "reviewer",
+      avatarColor: "#7c6238",
+      passwordHash: hashPassword(REVIEWER_PASSWORD),
+      passwordSetAt: new Date(),
+    },
   });
+  credentials.push({ email: reviewer.email, password: REVIEWER_PASSWORD, who: "reviewer" });
 
   const ambassadorUsers = [];
   for (const a of AMBASSADORS) {
+    const ambassadorPassword = generatePassword();
     const user = await db.user.create({
       data: {
         email: `${a.name.toLowerCase().replace(/\s+/g, ".")}@campus.circle`,
         name: a.name,
         role: "ambassador",
+        passwordHash: hashPassword(ambassadorPassword),
+        passwordSetAt: new Date(),
         lane: a.lane,
         bio: a.bio,
         avatarColor: a.color,
@@ -647,10 +700,11 @@ async function main() {
         joinedAt: addDays(COHORT_START, -3),
       },
     });
+    credentials.push({ email: user.email, password: ambassadorPassword, who: "ambassador" });
     ambassadorUsers.push({ ...user, progress: a.progress });
   }
 
-  const taskRows = [];
+  const taskRows: Awaited<ReturnType<typeof db.task.create>>[] = [];
   for (const t of TASKS) {
     const win = weekWindow(t.week);
     const row = await db.task.create({
@@ -663,8 +717,8 @@ async function main() {
         summary: t.summary,
         briefMd: t.briefMd,
         submissionType: t.submissionType,
-        typeConfig: JSON.stringify(t.typeConfig),
-        rubric: JSON.stringify(t.rubric),
+        typeConfig: json(t.typeConfig),
+        rubric: json(t.rubric),
         signalValue: t.signalValue,
         opensAt: t.opensAt ?? win.opensAt,
         dueAt: t.dueAt ?? win.dueAt,
@@ -703,13 +757,54 @@ async function main() {
     "Arjun Malhotra": 4,
   };
 
+  /** The app computes these server-side on submit; the seed has to agree with it. */
+  function withDerived(task: (typeof taskRows)[number], content: object) {
+    const c = content as Record<string, unknown>;
+    if (task.submissionType === "quiz" && Array.isArray(c.answers)) {
+      const config = (task.typeConfig ?? {}) as { quiz?: { questions?: { correctIndex: number }[] } };
+      const questions = config.quiz?.questions ?? [];
+      const correct = questions.reduce((s, q, i) => s + ((c.answers as number[])[i] === q.correctIndex ? 1 : 0), 0);
+      return { ...c, score: correct, total: questions.length || (c.answers as number[]).length };
+    }
+    return c;
+  }
+
+  function snapshotUrlFor(task: (typeof taskRows)[number], content: object) {
+    const c = content as { url?: string };
+    return task.submissionType === "link" && c.url ? c.url : null;
+  }
+
+  /**
+   * Moves someone's tier and Signal to a demo value the calendar has not reached yet.
+   * The gap is written to the ledger as an operator adjustment rather than only onto the
+   * membership total: Signal is only worth anything if the ledger explains every point of it.
+   */
+  async function topUpSignal(userId: string, target: number, tier: "campus_lead" | "senior") {
+    const current = await db.membership.findUniqueOrThrow({ where: { userId } });
+    const delta = target - current.signalTotal;
+    if (delta > 0) {
+      await db.signalLedger.create({
+        data: {
+          userId,
+          taskCode: "ADJ",
+          taskTitle: "Signal recognised at enrolment",
+          delta,
+          reason: "Operator adjustment: work recognised from before this cohort",
+          createdAt: addDays(COHORT_START, -2),
+        },
+      });
+    }
+    await db.membership.update({ where: { userId }, data: { tier, signalTotal: Math.max(target, current.signalTotal) } });
+  }
+
   async function accept(user: { id: string; name: string }, task: (typeof taskRows)[number], content: object, submittedAgo: number, reviewedAgo: number) {
     const sub = await db.submission.create({
       data: {
         taskId: task.id,
         userId: user.id,
         status: "accepted",
-        content: JSON.stringify(content),
+        content: json(withDerived(task, content)),
+        snapshotUrl: snapshotUrlFor(task, content),
         submittedAt: hoursAgo(submittedAgo),
       },
     });
@@ -718,7 +813,7 @@ async function main() {
         submissionId: sub.id,
         reviewerId: admin.id,
         decision: "accepted",
-        rubricResults: JSON.stringify(Array(JSON.parse(task.rubric).length).fill(true)),
+        rubricResults: json(Array(rubricLength(task.rubric)).fill(true)),
         feedbackMd: "Clean. Nothing to add.",
         reviewedAt: hoursAgo(reviewedAgo),
       },
@@ -731,15 +826,15 @@ async function main() {
 
   async function submitPending(user: { id: string }, task: (typeof taskRows)[number], content: object, ageHours: number) {
     await db.submission.create({
-      data: { taskId: task.id, userId: user.id, status: "submitted", content: JSON.stringify(content), submittedAt: hoursAgo(ageHours) },
+      data: { taskId: task.id, userId: user.id, status: "submitted", content: json(withDerived(task, content)), snapshotUrl: snapshotUrlFor(task, content), submittedAt: hoursAgo(ageHours) },
     });
   }
 
   async function changesRequested(user: { id: string }, task: (typeof taskRows)[number], content: object) {
     const sub = await db.submission.create({
-      data: { taskId: task.id, userId: user.id, status: "changes_requested", content: JSON.stringify(content), submittedAt: daysAgo(3) },
+      data: { taskId: task.id, userId: user.id, status: "changes_requested", content: json(withDerived(task, content)), snapshotUrl: snapshotUrlFor(task, content), submittedAt: daysAgo(3) },
     });
-    const rubricLen = JSON.parse(task.rubric).length;
+    const rubricLen = rubricLength(task.rubric);
     const results = Array(rubricLen).fill(true);
     results[rubricLen - 1] = false;
     await db.review.create({
@@ -747,7 +842,7 @@ async function main() {
         submissionId: sub.id,
         reviewerId: admin.id,
         decision: "changes_requested",
-        rubricResults: JSON.stringify(results),
+        rubricResults: json(results),
         feedbackMd: "Close. The last line of the rubric is the gap here, see the note on that line. Fix that and resubmit, everything else clears.",
         reviewedAt: daysAgo(2),
       },
@@ -777,20 +872,20 @@ async function main() {
       case "roster":
         return { rows: Array.from({ length: 10 }, (_, i) => ({ name: `Peer ${i + 1}`, wantsKnownFor: "Being genuinely useful in their field", whatHappensNow: "Nothing specific comes up when searched" })) };
       case "quiz":
-        return { answers: [1, 1], practicalText: "" };
+        return { answers: [1, 1], practicalText: "" }; // score/total are added by withDerived()
       default:
         return {};
     }
   }
 
-  let ledgerSummaryLines: string[] = [];
+  const ledgerSummaryLines: string[] = [];
 
   for (const amb of ambassadorUsers) {
     let total = 0;
     const cutoff = Math.round(EARLY_CODES.length * amb.progress);
     for (let i = 0; i < EARLY_CODES.length; i++) {
       const task = taskByCode.get(EARLY_CODES[i])!;
-      const content = sampleContent(task, amb.name, amb.lane);
+      const content = sampleContent(task, amb.name, amb.lane!);
       if (i < cutoff) {
         const daysBack = 15 - i; // spread reviews out realistically over the last few weeks
         total += await accept(amb, task, content, daysBack * 24 + 6, daysBack * 24);
@@ -803,7 +898,7 @@ async function main() {
     // B2 (this week's live task): queue members are mid-review, everyone else is either
     // done, working on it, or hasn't started — a realistic week-5 spread.
     const b2 = taskByCode.get("B2")!;
-    const content = sampleContent(b2, amb.name, amb.lane);
+    const content = sampleContent(b2, amb.name, amb.lane!);
     if (B2_QUEUE_AGES[amb.name] !== undefined) {
       await submitPending(amb, b2, content, B2_QUEUE_AGES[amb.name]);
     } else if (amb.progress > 0.85) {
@@ -812,7 +907,16 @@ async function main() {
     // otherwise: still open, no submission yet — shows as "open, N days left" on Home.
 
     await db.membership.update({ where: { userId: amb.id }, data: { signalTotal: total } });
-    await db.rewardGrant.create({ data: { userId: amb.id, rewardId: rewardByCode.get("circle_access")!.id, status: "fulfilled", fulfilledAt: addDays(COHORT_START, -3) } });
+    await db.rewardGrant.create({
+      data: {
+        userId: amb.id,
+        rewardId: rewardByCode.get("circle_access")!.id,
+        status: "fulfilled",
+        earnedAt: addDays(COHORT_START, -5),
+        claimedAt: addDays(COHORT_START, -4),
+        fulfilledAt: addDays(COHORT_START, -3),
+      },
+    });
     ledgerSummaryLines.push(`  ${amb.name.padEnd(16)} ${total} Signal`);
   }
 
@@ -832,16 +936,16 @@ async function main() {
   // fulfilment queue, and the "claimed/fulfilled" pill states all have something real to
   // render. Noted here because it runs slightly ahead of what week 5 would honestly allow.
   const star = ambassadorUsers.find((a) => a.name === "Aditya Singh")!;
-  await db.membership.update({ where: { userId: star.id }, data: { tier: "campus_lead", signalTotal: 860 } });
-  await db.certificate.create({ data: { userId: star.id, publicId: "cc01-aditya-singh-7f3a", assessmentScore: 92 } });
-  await db.rewardGrant.create({ data: { userId: star.id, rewardId: rewardByCode.get("certificate")!.id, status: "fulfilled", fulfilledAt: daysAgo(5) } });
-  await db.rewardGrant.create({ data: { userId: star.id, rewardId: rewardByCode.get("kit")!.id, status: "claimed", detail: "Shiv Nadar University hostel address on file", fulfilledAt: daysAgo(2) } });
-  await db.rewardGrant.create({ data: { userId: star.id, rewardId: rewardByCode.get("byline")!.id, status: "earned" } });
-  await db.rewardGrant.create({ data: { userId: star.id, rewardId: rewardByCode.get("operator_session")!.id, status: "earned" } });
+  await topUpSignal(star.id, 860, "campus_lead");
+  await db.certificate.create({ data: { userId: star.id, publicId: "cc01-aditya-singh-7f3a", assessmentScore: 92, issuedAt: daysAgo(5) } });
+  await db.rewardGrant.create({ data: { userId: star.id, rewardId: rewardByCode.get("certificate")!.id, status: "fulfilled", earnedAt: daysAgo(8), claimedAt: daysAgo(6), fulfilledAt: daysAgo(5) } });
+  await db.rewardGrant.create({ data: { userId: star.id, rewardId: rewardByCode.get("kit")!.id, status: "claimed", detail: "Shiv Nadar University hostel address on file", earnedAt: daysAgo(9), claimedAt: daysAgo(2) } });
+  await db.rewardGrant.create({ data: { userId: star.id, rewardId: rewardByCode.get("byline")!.id, status: "earned", earnedAt: daysAgo(4) } });
+  await db.rewardGrant.create({ data: { userId: star.id, rewardId: rewardByCode.get("operator_session")!.id, status: "earned", earnedAt: daysAgo(4) } });
 
   const secondSenior = ambassadorUsers.find((a) => a.name === "Priya Nair")!;
-  await db.membership.update({ where: { userId: secondSenior.id }, data: { tier: "senior", signalTotal: 540 } });
-  await db.rewardGrant.create({ data: { userId: secondSenior.id, rewardId: rewardByCode.get("kit")!.id, status: "earned" } });
+  await topUpSignal(secondSenior.id, 540, "senior");
+  await db.rewardGrant.create({ data: { userId: secondSenior.id, rewardId: rewardByCode.get("kit")!.id, status: "earned", earnedAt: daysAgo(6) } });
 
   await db.announcement.create({
     data: { cohortId: cohort.id, bodyMd: "Reviews on B2 are running slightly behind this week, we are aware and clearing the queue. Nothing you need to do differently.", publishedAt: daysAgo(1) },
@@ -875,6 +979,8 @@ async function main() {
   console.log(`Cohort: ${cohort.name}`);
   console.log(`Window: ${COHORT_START.toDateString()} -> ${COHORT_END.toDateString()}`);
   console.log(`Admin sign-in: ${admin.email}`);
+  console.log("\nSeeded passwords (shown once — this database is a preview cohort):");
+  for (const c of credentials) console.log(`  ${c.who.padEnd(10)} ${c.email.padEnd(34)} ${c.password}`);
   console.log("Ambassador Signal totals:");
   console.log(ledgerSummaryLines.join("\n"));
   console.log("Seed complete.");
